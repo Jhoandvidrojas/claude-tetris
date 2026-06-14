@@ -1,0 +1,101 @@
+name: Claude Issue Triage
+
+on:
+  issues:
+    types: [opened, edited]
+
+# Evita ejecuciones en paralelo sobre el mismo issue (ej. ediciones rápidas)
+concurrency:
+  group: issue-triage-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  triage:
+    # No actuar sobre issues abiertos por bots (evita ruido)
+    if: ${{ github.event.issue.user.type != 'Bot' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read     # leer game.js/index.html/style.css para el diagnóstico
+      issues: write      # aplicar labels y comentar
+      id-token: write    # auth de la action
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      # Paso 1: garantizar que exista el set fijo de labels (idempotente)
+      - name: Ensure labels exist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ensure() { gh label create "$1" --color "$2" --description "$3" --force; }
+          ensure "bug"            "d73a4a" "Algo no funciona como se espera"
+          ensure "enhancement"    "a2eeef" "Nueva funcionalidad o mejora"
+          ensure "gameplay"       "5319e7" "Mecánicas del juego (colisiones, rotación, scoring, niveles)"
+          ensure "ui"             "fbca04" "Interfaz visual, canvas, HUD, estilos"
+          ensure "performance"    "0e8a16" "Rendimiento del loop de juego o render"
+          ensure "controls"       "1d76db" "Controles de teclado / input"
+          ensure "documentation"  "0075ca" "Documentación (CLAUDE.md, README)"
+          ensure "question"       "d876e3" "Duda o solicitud de aclaración"
+          ensure "needs-info"     "e99695" "Falta información para diagnosticar"
+          ensure "priority:high"  "b60205" "Requiere atención pronta"
+
+      # Paso 2: Claude analiza el issue, aplica labels y comenta el diagnóstico
+      - name: Run Claude issue triage
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: |
+            --allowedTools "Read,Grep,Glob,Bash(gh issue view:*),Bash(gh issue edit:*),Bash(gh issue comment:*),Bash(gh label list:*)"
+          prompt: |
+            Eres el triador de issues del proyecto Claude Tetris (juego de Tetris
+            en JavaScript vanilla: game.js, index.html, style.css).
+
+            Estás procesando el issue #${{ github.event.issue.number }} del repo
+            ${{ github.repository }}.
+
+            Título: ${{ github.event.issue.title }}
+
+            Tu tarea (responde y comenta SIEMPRE en español):
+
+            1. Lee el cuerpo del issue con:
+               gh issue view ${{ github.event.issue.number }} --json title,body,labels
+            2. Si necesitas contexto del código, lee game.js / index.html /
+               style.css y CLAUDE.md para fundamentar el diagnóstico.
+            3. Elige los labels MÁS apropiados ÚNICAMENTE de esta lista fija:
+               bug, enhancement, gameplay, ui, performance, controls,
+               documentation, question, needs-info, priority:high.
+               No inventes labels nuevos. Aplícalos con:
+               gh issue edit ${{ github.event.issue.number }} --add-label "label1,label2"
+            4. Publica UN comentario con el diagnóstico general usando este formato:
+
+               ## 🔍 Diagnóstico automático (Claude)
+
+               **Resumen del problema:** <1-2 frases>
+
+               **Causa raíz probable:** <hipótesis basada en el código>
+
+               **Archivos / funciones afectadas:**
+               - `game.js` → función `...`
+               - ...
+
+               **Enfoque de solución sugerido:**
+               1. <paso>
+               2. <paso>
+
+               **Riesgos / consideraciones:** <opcional>
+
+               > Diagnóstico generado automáticamente para orientar la
+               > implementación de la solución. Revisar antes de codificar.
+
+               Publícalo con:
+               gh issue comment ${{ github.event.issue.number }} --body "<diagnóstico>"
+
+            Reglas:
+            - Si el issue no tiene suficiente información para diagnosticar,
+              aplica el label "needs-info" y comenta qué datos faltan.
+            - Sé conciso y técnico. No implementes la solución todavía; solo
+              diagnostica.
