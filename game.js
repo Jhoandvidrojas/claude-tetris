@@ -15,6 +15,41 @@ const COLORS = [
   '#ffb74d', // L - orange
 ];
 
+// Pastel palette: soft tints aligned to piece indices 1-7.
+const PASTEL_COLORS = [
+  null,
+  '#a7e8eb', // I
+  '#fbe7a1', // O
+  '#d9b8e8', // T
+  '#bfe3c0', // S
+  '#f2b8b8', // Z
+  '#bcd6f7', // J
+  '#fbd5a5', // L
+];
+
+// Neon palette: saturated colors that glow well on a dark canvas.
+const NEON_COLORS = [
+  null,
+  '#00e5ff', // I
+  '#ffea00', // O
+  '#e040fb', // T
+  '#00e676', // S
+  '#ff1744', // Z
+  '#2979ff', // J
+  '#ff9100', // L
+];
+
+// Visual skins. Each defines a piece palette and drawBlock rendering flags.
+// `style` selects the per-block renderer; `glow` enables canvas shadow blur.
+const SKINS = {
+  retro:  { palette: COLORS,        style: 'flat',  glow: 0 },
+  neon:   { palette: NEON_COLORS,   style: 'flat',  glow: 12 },
+  pastel: { palette: PASTEL_COLORS, style: 'round', glow: 0 },
+  pixel:  { palette: COLORS,        style: 'pixel', glow: 0 },
+};
+
+let activeSkin = SKINS.retro;
+
 const PIECES = [
   null,
   [[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]], // I
@@ -158,14 +193,57 @@ function updateHUD() {
 
 function drawBlock(context, x, y, colorIndex, size, alpha) {
   if (!colorIndex) return;
-  const color = COLORS[colorIndex];
+  const color = activeSkin.palette[colorIndex];
+  const px = x * size + 1, py = y * size + 1, s = size - 2;
   context.globalAlpha = alpha ?? 1;
-  context.fillStyle = color;
-  context.fillRect(x * size + 1, y * size + 1, size - 2, size - 2);
-  // highlight
-  context.fillStyle = 'rgba(255,255,255,0.12)';
-  context.fillRect(x * size + 1, y * size + 1, size - 2, 4);
+  if (activeSkin.glow) {
+    context.shadowBlur = activeSkin.glow;
+    context.shadowColor = color;
+  }
+  if (activeSkin.style === 'round') {
+    drawRoundBlock(context, px, py, s, color);
+  } else if (activeSkin.style === 'pixel') {
+    drawPixelBlock(context, px, py, s, color);
+  } else {
+    drawFlatBlock(context, px, py, s, color);
+  }
+  context.shadowBlur = 0;
   context.globalAlpha = 1;
+}
+
+// Flat square block with a top highlight (retro / neon).
+function drawFlatBlock(context, px, py, s, color) {
+  context.fillStyle = color;
+  context.fillRect(px, py, s, s);
+  context.fillStyle = 'rgba(255,255,255,0.12)';
+  context.fillRect(px, py, s, 4);
+}
+
+// Rounded-corner block for the pastel skin.
+function drawRoundBlock(context, px, py, s, color) {
+  const r = Math.max(3, s * 0.25);
+  context.fillStyle = color;
+  context.beginPath();
+  context.roundRect(px, py, s, s, r);
+  context.fill();
+  context.fillStyle = 'rgba(255,255,255,0.25)';
+  context.beginPath();
+  context.roundRect(px, py, s, Math.max(3, s * 0.3), r);
+  context.fill();
+}
+
+// Pixel-art block: base fill plus an internal mini-pixel dithering pattern.
+function drawPixelBlock(context, px, py, s, color) {
+  context.fillStyle = color;
+  context.fillRect(px, py, s, s);
+  const step = Math.max(3, Math.floor(s / 5));
+  context.fillStyle = 'rgba(255,255,255,0.18)';
+  for (let iy = 0; iy < s; iy += step)
+    for (let ix = (iy / step) % 2 ? step : 0; ix < s; ix += step * 2)
+      context.fillRect(px + ix, py + iy, step, step);
+  context.fillStyle = 'rgba(0,0,0,0.18)';
+  context.fillRect(px, py + s - step, s, step);
+  context.fillRect(px + s - step, py, step, s);
 }
 
 function drawGrid() {
@@ -301,6 +379,24 @@ document.addEventListener('keydown', e => {
 });
 
 restartBtn.addEventListener('click', init);
+
+const skinSelect = document.getElementById('skin-select');
+
+// Apply a skin by name: swap the active palette, sync body class, and redraw.
+function setSkin(name) {
+  if (!SKINS[name]) name = 'retro';
+  activeSkin = SKINS[name];
+  for (const key of Object.keys(SKINS)) document.body.classList.remove('skin-' + key);
+  document.body.classList.add('skin-' + name);
+  localStorage.setItem('tetris-skin', name);
+  if (board) { draw(); drawNext(); }
+}
+
+const savedSkin = localStorage.getItem('tetris-skin') || 'retro';
+skinSelect.value = SKINS[savedSkin] ? savedSkin : 'retro';
+setSkin(skinSelect.value);
+
+skinSelect.addEventListener('change', () => setSkin(skinSelect.value));
 
 const themeSwitch = document.getElementById('theme-switch');
 

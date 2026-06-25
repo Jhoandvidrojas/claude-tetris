@@ -131,6 +131,29 @@ body {
   border-radius: 4px;
 }
 
+/* ---- Skin selector ---- */
+#skin-select {
+  background: var(--kbd-bg);
+  color: var(--text);
+  border: 1px solid var(--kbd-border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-family: inherit;
+  font-size: 12px;
+  letter-spacing: 1px;
+  cursor: pointer;
+}
+
+#skin-select:focus {
+  outline: 1px solid var(--accent);
+}
+
+/* Neon skin: dark canvas background regardless of theme for real glow */
+body.skin-neon #board,
+body.skin-neon #next-canvas {
+  background: #05050a;
+}
+
 /* ---- Controles ---- */
 .controls ul {
   list-style: none;
