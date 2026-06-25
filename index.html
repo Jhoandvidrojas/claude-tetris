@@ -39,6 +39,16 @@
           <canvas id="next-canvas" width="120" height="120"></canvas>
         </div>
 
+        <div class="panel-section">
+          <span class="label">SKIN</span>
+          <select id="skin-select" aria-label="Elegir skin visual">
+            <option value="retro">Retro</option>
+            <option value="neon">Neón</option>
+            <option value="pastel">Pastel</option>
+            <option value="pixel">Pixel art</option>
+          </select>
+        </div>
+
         <div class="panel-section controls">
           <span class="label">CONTROLS</span>
           <ul>
@@ -56,7 +66,56 @@
       <div class="overlay-box">
         <p id="overlay-title">GAME OVER</p>
         <p id="overlay-score"></p>
-        <button id="restart-btn">Reiniciar</button>
+        <div id="gameover-content">
+          <div id="name-entry" class="name-entry hidden">
+            <label class="label" for="name-input">Tu nombre</label>
+            <input type="text" id="name-input" maxlength="12" placeholder="Tu nombre" autocomplete="off" />
+            <button id="save-score-btn">Guardar</button>
+          </div>
+          <div id="overlay-scores" class="scores-block"></div>
+          <button id="restart-btn">Reiniciar</button>
+          <button id="reset-scores-btn" class="reset-btn">Resetear records</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="start-screen" class="overlay start-screen hidden">
+      <div class="overlay-box">
+        <p id="overlay-title">RECORDS</p>
+        <div id="start-scores" class="scores-block"></div>
+        <button id="play-btn">Jugar</button>
+        <button id="start-reset-btn" class="reset-btn">Resetear records</button>
+      </div>
+    </div>
+
+    <div id="pause-menu" class="overlay hidden">
+      <div class="overlay-box menu-box">
+        <p class="menu-title">PAUSA</p>
+        <button id="resume-btn" class="menu-btn">Reanudar</button>
+        <button id="menu-restart-btn" class="menu-btn">Reiniciar</button>
+        <button id="controls-btn" class="menu-btn">Ver controles</button>
+        <div class="menu-level">
+          <label for="start-level">Nivel inicial</label>
+          <select id="start-level">
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+            <option value="6">6</option>
+            <option value="7">7</option>
+            <option value="8">8</option>
+            <option value="9">9</option>
+            <option value="10">10</option>
+          </select>
+        </div>
+        <ul id="menu-controls" class="menu-controls hidden">
+          <li><kbd>←</kbd><kbd>→</kbd> mover</li>
+          <li><kbd>↑</kbd> rotar</li>
+          <li><kbd>↓</kbd> bajar</li>
+          <li><kbd>Space</kbd> caída</li>
+          <li><kbd>P</kbd> / <kbd>Esc</kbd> pausa</li>
+        </ul>
       </div>
     </div>
   </div>

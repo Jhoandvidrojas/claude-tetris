@@ -15,6 +15,41 @@ const COLORS = [
   '#ffb74d', // L - orange
 ];
 
+// Pastel palette: soft tints aligned to piece indices 1-7.
+const PASTEL_COLORS = [
+  null,
+  '#a7e8eb', // I
+  '#fbe7a1', // O
+  '#d9b8e8', // T
+  '#bfe3c0', // S
+  '#f2b8b8', // Z
+  '#bcd6f7', // J
+  '#fbd5a5', // L
+];
+
+// Neon palette: saturated colors that glow well on a dark canvas.
+const NEON_COLORS = [
+  null,
+  '#00e5ff', // I
+  '#ffea00', // O
+  '#e040fb', // T
+  '#00e676', // S
+  '#ff1744', // Z
+  '#2979ff', // J
+  '#ff9100', // L
+];
+
+// Visual skins. Each defines a piece palette and drawBlock rendering flags.
+// `style` selects the per-block renderer; `glow` enables canvas shadow blur.
+const SKINS = {
+  retro:  { palette: COLORS,        style: 'flat',  glow: 0 },
+  neon:   { palette: NEON_COLORS,   style: 'flat',  glow: 12 },
+  pastel: { palette: PASTEL_COLORS, style: 'round', glow: 0 },
+  pixel:  { palette: COLORS,        style: 'pixel', glow: 0 },
+};
+
+let activeSkin = SKINS.retro;
+
 const PIECES = [
   null,
   [[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]], // I
@@ -39,8 +74,32 @@ const overlay = document.getElementById('overlay');
 const overlayTitle = document.getElementById('overlay-title');
 const overlayScore = document.getElementById('overlay-score');
 const restartBtn = document.getElementById('restart-btn');
+// Pause menu refs
+const pauseMenu = document.getElementById('pause-menu');
+const resumeBtn = document.getElementById('resume-btn');
+const menuRestartBtn = document.getElementById('menu-restart-btn');
+const controlsBtn = document.getElementById('controls-btn');
+const menuControls = document.getElementById('menu-controls');
+const startLevelSelect = document.getElementById('start-level');
+
+// High-scores refs
+const nameEntry = document.getElementById('name-entry');
+const nameInput = document.getElementById('name-input');
+const saveScoreBtn = document.getElementById('save-score-btn');
+const overlayScores = document.getElementById('overlay-scores');
+const resetScoresBtn = document.getElementById('reset-scores-btn');
+const gameoverContent = document.getElementById('gameover-content');
+const startScreen = document.getElementById('start-screen');
+const startScores = document.getElementById('start-scores');
+const playBtn = document.getElementById('play-btn');
+const startResetBtn = document.getElementById('start-reset-btn');
+
+const SCORES_KEY = 'tetris-highscores';
+const MAX_SCORES = 5;
 
 let board, current, next, score, lines, level, paused, gameOver, lastTime, dropAccum, dropInterval, animId;
+let startLevel = 1;
+let bestCombo, scoreSaved;
 
 function createBoard() {
   return Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
@@ -105,6 +164,7 @@ function clearLines() {
   }
   if (cleared) {
     lines += cleared;
+    if (cleared > bestCombo) bestCombo = cleared;
     score += (LINE_SCORES[cleared] || 0) * level;
     level = Math.floor(lines / 10) + 1;
     dropInterval = Math.max(100, 1000 - (level - 1) * 90);
@@ -158,14 +218,57 @@ function updateHUD() {
 
 function drawBlock(context, x, y, colorIndex, size, alpha) {
   if (!colorIndex) return;
-  const color = COLORS[colorIndex];
+  const color = activeSkin.palette[colorIndex];
+  const px = x * size + 1, py = y * size + 1, s = size - 2;
   context.globalAlpha = alpha ?? 1;
-  context.fillStyle = color;
-  context.fillRect(x * size + 1, y * size + 1, size - 2, size - 2);
-  // highlight
-  context.fillStyle = 'rgba(255,255,255,0.12)';
-  context.fillRect(x * size + 1, y * size + 1, size - 2, 4);
+  if (activeSkin.glow) {
+    context.shadowBlur = activeSkin.glow;
+    context.shadowColor = color;
+  }
+  if (activeSkin.style === 'round') {
+    drawRoundBlock(context, px, py, s, color);
+  } else if (activeSkin.style === 'pixel') {
+    drawPixelBlock(context, px, py, s, color);
+  } else {
+    drawFlatBlock(context, px, py, s, color);
+  }
+  context.shadowBlur = 0;
   context.globalAlpha = 1;
+}
+
+// Flat square block with a top highlight (retro / neon).
+function drawFlatBlock(context, px, py, s, color) {
+  context.fillStyle = color;
+  context.fillRect(px, py, s, s);
+  context.fillStyle = 'rgba(255,255,255,0.12)';
+  context.fillRect(px, py, s, 4);
+}
+
+// Rounded-corner block for the pastel skin.
+function drawRoundBlock(context, px, py, s, color) {
+  const r = Math.max(3, s * 0.25);
+  context.fillStyle = color;
+  context.beginPath();
+  context.roundRect(px, py, s, s, r);
+  context.fill();
+  context.fillStyle = 'rgba(255,255,255,0.25)';
+  context.beginPath();
+  context.roundRect(px, py, s, Math.max(3, s * 0.3), r);
+  context.fill();
+}
+
+// Pixel-art block: base fill plus an internal mini-pixel dithering pattern.
+function drawPixelBlock(context, px, py, s, color) {
+  context.fillStyle = color;
+  context.fillRect(px, py, s, s);
+  const step = Math.max(3, Math.floor(s / 5));
+  context.fillStyle = 'rgba(255,255,255,0.18)';
+  for (let iy = 0; iy < s; iy += step)
+    for (let ix = (iy / step) % 2 ? step : 0; ix < s; ix += step * 2)
+      context.fillRect(px + ix, py + iy, step, step);
+  context.fillStyle = 'rgba(0,0,0,0.18)';
+  context.fillRect(px, py + s - step, s, step);
+  context.fillRect(px + s - step, py, step, s);
 }
 
 function drawGrid() {
@@ -218,25 +321,108 @@ function drawNext() {
       drawBlock(nextCtx, offX + c, offY + r, shape[r][c], NB);
 }
 
+function defaultScores() {
+  return { entries: [], bestCombo: 0, maxLines: 0 };
+}
+
+function loadScores() {
+  // Read high-score data from localStorage, returning safe defaults on failure.
+  try {
+    const data = JSON.parse(localStorage.getItem(SCORES_KEY));
+    if (!data || !Array.isArray(data.entries)) return defaultScores();
+    return {
+      entries: data.entries.slice(0, MAX_SCORES),
+      bestCombo: Number(data.bestCombo) || 0,
+      maxLines: Number(data.maxLines) || 0,
+    };
+  } catch {
+    return defaultScores();
+  }
+}
+
+function saveScores(data) {
+  // Persist high-score data to localStorage as JSON.
+  localStorage.setItem(SCORES_KEY, JSON.stringify(data));
+}
+
+function qualifies(scores, value) {
+  // Return true if value would enter the top MAX_SCORES list.
+  if (value <= 0) return false;
+  if (scores.entries.length < MAX_SCORES) return true;
+  return value > scores.entries[scores.entries.length - 1].score;
+}
+
+function recordScore(name) {
+  // Insert the current run, persist records, and return its row index.
+  const scores = loadScores();
+  const entry = { name: name || 'Anónimo', score };
+  scores.entries.push(entry);
+  scores.entries.sort((a, b) => b.score - a.score);
+  scores.entries = scores.entries.slice(0, MAX_SCORES);
+  scores.bestCombo = Math.max(scores.bestCombo, bestCombo);
+  scores.maxLines = Math.max(scores.maxLines, lines);
+  saveScores(scores);
+  scoreSaved = true;
+  return scores.entries.indexOf(entry);
+}
+
+function renderScores(container, highlightIndex) {
+  // Render the high-score table and historical stats into a container.
+  const scores = loadScores();
+  if (!scores.entries.length) {
+    container.innerHTML = '<p class="scores-empty">Aún no hay records</p>';
+    return;
+  }
+  const rows = scores.entries.map((e, i) => {
+    const hl = i === highlightIndex ? ' class="highlight"' : '';
+    return `<tr${hl}><td class="score-rank">${i + 1}</td>` +
+      `<td>${escapeHtml(e.name)}</td>` +
+      `<td class="score-points">${e.score.toLocaleString()}</td></tr>`;
+  }).join('');
+  container.innerHTML =
+    '<table class="scores-table"><thead><tr><th>#</th><th>Jugador</th>' +
+    '<th>Puntos</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+    `<div class="scores-stats"><span>Mejor combo: <b>${scores.bestCombo}</b></span>` +
+    `<span>Líneas máximas: <b>${scores.maxLines}</b></span></div>`;
+}
+
+function escapeHtml(str) {
+  // Escape user-provided text for safe HTML insertion.
+  return String(str).replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[ch]));
+}
+
+function resetScores(container, highlightName) {
+  // Clear stored records and refresh the given table.
+  localStorage.removeItem(SCORES_KEY);
+  renderScores(container, highlightName);
+}
+
 function endGame() {
   gameOver = true;
+  scoreSaved = false;
   cancelAnimationFrame(animId);
   overlayTitle.textContent = 'GAME OVER';
   overlayScore.textContent = `Puntuación: ${score.toLocaleString()}`;
+  nameEntry.classList.toggle('hidden', !qualifies(loadScores(), score));
+  nameInput.value = '';
+  renderScores(overlayScores, null);
+  gameoverContent.classList.remove('hidden');
   overlay.classList.remove('hidden');
+  if (!nameEntry.classList.contains('hidden')) nameInput.focus();
 }
 
 function togglePause() {
   if (gameOver) return;
   paused = !paused;
   if (!paused) {
+    pauseMenu.classList.add('hidden');
     lastTime = performance.now();
     loop(lastTime);
   } else {
     cancelAnimationFrame(animId);
-    overlayTitle.textContent = 'PAUSA';
-    overlayScore.textContent = '';
-    overlay.classList.remove('hidden');
+    pauseMenu.classList.remove('hidden');
   }
 }
 
@@ -257,26 +443,41 @@ function loop(ts) {
   animId = requestAnimationFrame(loop);
 }
 
+/** Apply the chosen start level: set level, lines and dropInterval coherently. */
+function applyStartLevel() {
+  level = startLevel;
+  lines = (level - 1) * 10;
+  dropInterval = Math.max(100, 1000 - (level - 1) * 90);
+}
+
 function init() {
   board = createBoard();
   score = 0;
-  lines = 0;
-  level = 1;
   paused = false;
   gameOver = false;
-  dropInterval = 1000;
+  applyStartLevel();
+  bestCombo = 0;
+  scoreSaved = false;
   dropAccum = 0;
   lastTime = performance.now();
   next = randomPiece();
   spawn();
   updateHUD();
   overlay.classList.add('hidden');
+  pauseMenu.classList.add('hidden');
+  startScreen.classList.add('hidden');
   cancelAnimationFrame(animId);
   animId = requestAnimationFrame(loop);
 }
 
+function showStartScreen() {
+  // Render records and present the start overlay; the game begins on "Jugar".
+  renderScores(startScores, null);
+  startScreen.classList.remove('hidden');
+}
+
 document.addEventListener('keydown', e => {
-  if (e.code === 'KeyP') { togglePause(); return; }
+  if (e.code === 'KeyP' || e.code === 'Escape') { togglePause(); return; }
   if (paused || gameOver) return;
   switch (e.code) {
     case 'ArrowLeft':
@@ -302,6 +503,58 @@ document.addEventListener('keydown', e => {
 
 restartBtn.addEventListener('click', init);
 
+// ---- Pause menu wiring ----
+resumeBtn.addEventListener('click', togglePause);
+menuRestartBtn.addEventListener('click', () => {
+  menuControls.classList.add('hidden');
+  init();
+});
+controlsBtn.addEventListener('click', () => menuControls.classList.toggle('hidden'));
+startLevelSelect.addEventListener('change', () => {
+  startLevel = Number(startLevelSelect.value);
+});
+
+// ---- High-scores wiring ----
+playBtn.addEventListener('click', init);
+
+function saveCurrentScore() {
+  // Persist the run under the entered name and refresh the game-over table.
+  if (scoreSaved) return;
+  const index = recordScore(nameInput.value.trim());
+  nameEntry.classList.add('hidden');
+  renderScores(overlayScores, index);
+}
+
+saveScoreBtn.addEventListener('click', saveCurrentScore);
+nameInput.addEventListener('keydown', e => {
+  if (e.code === 'Enter') { e.preventDefault(); saveCurrentScore(); }
+});
+
+resetScoresBtn.addEventListener('click', () => {
+  resetScores(overlayScores, null);
+  nameEntry.classList.add('hidden');
+});
+startResetBtn.addEventListener('click', () => resetScores(startScores, null));
+
+// ---- Skins wiring ----
+const skinSelect = document.getElementById('skin-select');
+
+// Apply a skin by name: swap the active palette, sync body class, and redraw.
+function setSkin(name) {
+  if (!SKINS[name]) name = 'retro';
+  activeSkin = SKINS[name];
+  for (const key of Object.keys(SKINS)) document.body.classList.remove('skin-' + key);
+  document.body.classList.add('skin-' + name);
+  localStorage.setItem('tetris-skin', name);
+  if (board) { draw(); drawNext(); }
+}
+
+const savedSkin = localStorage.getItem('tetris-skin') || 'retro';
+skinSelect.value = SKINS[savedSkin] ? savedSkin : 'retro';
+setSkin(skinSelect.value);
+
+skinSelect.addEventListener('change', () => setSkin(skinSelect.value));
+
 const themeSwitch = document.getElementById('theme-switch');
 
 if (localStorage.getItem('theme') === 'light') {
@@ -319,4 +572,4 @@ themeSwitch.addEventListener('change', () => {
   }
 });
 
-init();
+showStartScreen();
